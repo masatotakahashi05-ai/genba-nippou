@@ -8,17 +8,18 @@ const INIT_COMPANIES = [{ id: "C001", name: "山田建設株式会社" }, { id: 
 const INIT_PAIRS = [{ siteId: "S001", companyId: "C001" }, { siteId: "S001", companyId: "C002" }, { siteId: "S002", companyId: "C003" }];
 const INIT_WORKERS = [{ id: "W001", name: "田中 一郎", companyId: "C001" }, { id: "W002", name: "鈴木 健太", companyId: "C002" }];
 const INIT_RECORDS = [{ id: 1, siteId: "S001", companyId: "C001", workerName: "田中 一郎", date: "2025-03-09", checkIn: "08:05", checkOut: "17:30", work: "基礎コンクリート打設", note: "" }];
-const ADMIN_PASS = "1234";
+const DEFAULT_PASS = "1234";
 
 const C = { bg: "#F5F3EF", card: "#fff", orange: "#E8540A", orangeLight: "#FDF0EB", dark: "#1C1A17", mid: "#6B6560", border: "#E2DDD8", green: "#2D9E6B", red: "#E53E3E" };
 const inp = { width: "100%", boxSizing: "border-box", background: "#F5F3EF", border: "1.5px solid #E2DDD8", borderRadius: 10, padding: "11px 14px", fontSize: 15, color: "#1C1A17", outline: "none", fontFamily: "inherit" };
 const PAGE = { TOP: "top", SCAN: "scan", FORM: "form", DONE: "done", ADMIN_LOGIN: "admin_login", ADMIN: "admin" };
-const TAB = { RECORDS: "records", SITES: "sites", COMPANIES: "companies", QR: "qr", WORKERS: "workers" };
+const TAB = { RECORDS: "records", SITES: "sites", COMPANIES: "companies", QR: "qr", WORKERS: "workers", SETTINGS: "settings" };
 const uid = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const todayStr = () => new Date().toISOString().split("T")[0];
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 
 export default function App() {
+  const [adminPassword, setAdminPassword] = useState(() => load("adminPassword", DEFAULT_PASS));
   const [page, setPage] = useState(PAGE.TOP);
   const [sites, setSites] = useState(() => load("sites", INIT_SITES));
   const [companies, setCompanies] = useState(() => load("companies", INIT_COMPANIES));
@@ -33,6 +34,7 @@ export default function App() {
   const [tab, setTab] = useState(TAB.RECORDS);
   const [filter, setFilter] = useState({ site: "", company: "" });
 
+  useEffect(() => { save("adminPassword", adminPassword); }, [adminPassword]);
   useEffect(() => { save("sites", sites); }, [sites]);
   useEffect(() => { save("companies", companies); }, [companies]);
   useEffect(() => { save("pairs", pairs); }, [pairs]);
@@ -53,7 +55,7 @@ export default function App() {
     setPage(PAGE.DONE);
   };
   const handleCheckOut = (id) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, checkOut: nowTime() } : r)); showToast("退場時刻を記録しました"); };
-  const loginAdmin = () => { if (adminPass === ADMIN_PASS) { setPage(PAGE.ADMIN); setAdminPass(""); setAdminError(""); } else setAdminError("パスワードが違います"); };
+  const loginAdmin = () => { if (adminPass === adminPassword) { setPage(PAGE.ADMIN); setAdminPass(""); setAdminError(""); } else setAdminError("パスワードが違います"); };
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif", color: C.dark }}>
@@ -206,7 +208,7 @@ export default function App() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 18, overflowX: "auto", paddingBottom: 2 }}>
-            {[[TAB.RECORDS, "📋 日報"], [TAB.SITES, "🏗️ 現場"], [TAB.COMPANIES, "🏢 会社"], [TAB.QR, "📲 QR"], [TAB.WORKERS, "👷 作業員"]].map(([t, l]) => (
+            {[[TAB.RECORDS, "📋 日報"], [TAB.SITES, "🏗️ 現場"], [TAB.COMPANIES, "🏢 会社"], [TAB.QR, "📲 QR"], [TAB.WORKERS, "👷 作業員"], [TAB.SETTINGS, "⚙️ 設定"]].map(([t, l]) => (
               <button key={t} onClick={() => setTab(t)} style={{ padding: "8px 16px", borderRadius: 9, border: tab === t ? `1.5px solid ${C.orange}` : `1.5px solid ${C.border}`, background: tab === t ? C.orangeLight : C.card, color: tab === t ? C.orange : C.mid, fontSize: 13, fontWeight: tab === t ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>
             ))}
           </div>
@@ -242,6 +244,7 @@ export default function App() {
           {tab === TAB.COMPANIES && <MasterList title="会社" icon="🏢" items={companies} setItems={setCompanies} showToast={showToast} genId={() => "C" + uid()} />}
           {tab === TAB.QR && <QRManager sites={sites} companies={companies} pairs={pairs} setPairs={setPairs} showToast={showToast} />}
           {tab === TAB.WORKERS && <WorkerManager workers={workers} setWorkers={setWorkers} companies={companies} showToast={showToast} />}
+          {tab === TAB.SETTINGS && <SettingsPanel adminPassword={adminPassword} setAdminPassword={setAdminPassword} showToast={showToast} />}
         </div>
       )}
     </div>
@@ -393,6 +396,47 @@ function WorkerManager({ workers, setWorkers, companies, showToast }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function SettingsPanel({ adminPassword, setAdminPassword, showToast }) {
+  const [current, setCurrent] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+
+  const handleChange = () => {
+    setError("");
+    if (!current) { setError("現在のパスワードを入力してください"); return; }
+    if (current !== adminPassword) { setError("現在のパスワードが違います"); return; }
+    if (!newPass || newPass.length < 4) { setError("新しいパスワードは4文字以上で入力してください"); return; }
+    if (newPass !== confirm) { setError("新しいパスワードが一致しません"); return; }
+    setAdminPassword(newPass);
+    setCurrent(""); setNewPass(""); setConfirm("");
+    showToast("パスワードを変更しました");
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>⚙️ 管理者設定</div>
+      <div style={{ background: C.card, borderRadius: 16, padding: "22px 18px", border: `1px solid ${C.border}` }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16, color: C.dark }}>🔐 パスワードの変更</div>
+        <FRow label="現在のパスワード">
+          <input type="password" value={current} onChange={e => setCurrent(e.target.value)} placeholder="現在のパスワード" style={inp} />
+        </FRow>
+        <FRow label="新しいパスワード（4文字以上）">
+          <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="新しいパスワード" style={inp} />
+        </FRow>
+        <FRow label="新しいパスワード（確認）">
+          <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="もう一度入力" style={inp} onKeyDown={e => e.key === "Enter" && handleChange()} />
+        </FRow>
+        {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12, padding: "8px 12px", background: "#FEE", borderRadius: 8 }}>⚠️ {error}</div>}
+        <button onClick={handleChange} style={{ width: "100%", background: C.orange, color: "#fff", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>パスワードを変更する</button>
+      </div>
+      <div style={{ background: "#F0F7FF", borderRadius: 12, padding: "14px 16px", marginTop: 16, fontSize: 12, color: "#3B7DD8", lineHeight: 1.8 }}>
+        💡 パスワードはこのスマホ・ブラウザに保存されます。忘れた場合はコード内の <strong>DEFAULT_PASS</strong> の値に戻ります（初期値: 1234）
+      </div>
     </div>
   );
 }
